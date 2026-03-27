@@ -421,6 +421,61 @@ export function registerAuthRoutes(app: Express): void {
   });
 
   /**
+   * Gateway 内部登录 - Gateway internal login
+   * POST /api/auth/gateway-login
+   *
+   * 由 Gateway 调用，通过共享密钥鉴权，绕过 CSRF 和密码验证。
+   * Called by Gateway, authenticated via shared secret, bypasses CSRF and password verification.
+   */
+  app.post('/api/auth/gateway-login', async (req: Request, res: Response) => {
+    try {
+      const { gatewaySecret, username } = req.body;
+
+      if (!process.env.GATEWAY_SECRET || gatewaySecret !== process.env.GATEWAY_SECRET) {
+        res.status(403).json({ success: false, error: 'Invalid gateway secret' });
+        return;
+      }
+
+      if (!username || typeof username !== 'string') {
+        res.status(400).json({ success: false, error: 'Username is required' });
+        return;
+      }
+
+      let user = await UserRepository.findByUsername(username);
+      if (!user) {
+        try {
+          const randomPassword = AuthService.generateRandomPassword();
+          const passwordHash = await AuthService.hashPassword(randomPassword);
+          user = await UserRepository.createUser(username, passwordHash);
+        } catch {
+          user = await UserRepository.findByUsername(username);
+          if (!user) {
+            res.status(500).json({ success: false, error: 'Failed to create user' });
+            return;
+          }
+        }
+      }
+
+      const token = await AuthService.generateToken(user);
+      await UserRepository.updateLastLogin(user.id);
+
+      res.cookie(AUTH_CONFIG.COOKIE.NAME, token, {
+        ...getCookieOptions(),
+        maxAge: AUTH_CONFIG.TOKEN.COOKIE_MAX_AGE,
+      });
+
+      res.json({
+        success: true,
+        user: { id: user.id, username: user.username },
+        token,
+      });
+    } catch (error) {
+      console.error('Gateway login error:', error);
+      res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  });
+
+  /**
    * 二维码登录页面 - QR code login page
    * GET /qr-login
    * 安全处理：返回静态 HTML，JavaScript 从 URL 读取 token，避免 XSS

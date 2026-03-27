@@ -1,4 +1,4 @@
-import { ArrowCircleLeft, ListCheckbox, Plus, SettingTwo } from '@icon-park/react';
+import { ArrowCircleLeft, ListCheckbox, Plus, SettingTwo, User } from '@icon-park/react';
 import { IconMoonFill, IconSunFill } from '@arco-design/web-react/icon';
 import classNames from 'classnames';
 import React, { Suspense, useEffect, useRef, useState } from 'react';
@@ -11,6 +11,7 @@ import { cleanupSiderTooltips, getSiderTooltipProps } from '@renderer/utils/ui/s
 import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
 import { blurActiveElement } from '@renderer/utils/ui/focus';
 import { useThemeContext } from '@renderer/hooks/context/ThemeContext';
+import { useAuth } from '@renderer/hooks/context/AuthContext';
 import ConversationSearchPopover from '@renderer/pages/conversation/GroupedHistory/ConversationSearchPopover';
 
 const WorkspaceGroupedHistory = React.lazy(() => import('@renderer/pages/conversation/GroupedHistory'));
@@ -31,6 +32,7 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
   const navigate = useNavigate();
   const { closePreview } = usePreviewContext();
   const { theme, setTheme } = useThemeContext();
+  const { user } = useAuth();
   const [isBatchMode, setIsBatchMode] = useState(false);
   const isSettings = pathname.startsWith('/settings');
   const lastNonSettingsPathRef = useRef('/guid');
@@ -191,6 +193,12 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
                 </span>
               </div>
             </Tooltip>
+          )}
+          {user && (
+            <div className='flex items-center gap-10px px-12px py-4px'>
+              <User theme='outline' size='16' className='shrink-0 text-t-3' style={{ lineHeight: 0 }} />
+              <span className='collapsed-hidden text-t-3 text-12px truncate'>{user.username}</span>
+            </div>
           )}
           <Tooltip
             {...siderTooltipProps}

@@ -1,0 +1,32 @@
+node_modules/
+.git/
+.vscode/
+.idea/
+.claude/
+*.md
+.env
+.env.*
+!.env.example
+data/
+
+# 构建产物由宿主机 pre-docker 生成后 COPY，排除源码
+src/
+!src/process/resources
+tests/
+docs/
+*.config.ts
+*.config.js
+tsconfig*.json
+vitest.config.*
+playwright.config.*
+electron-builder.*
+electron.vite.*
+
+# 开发工具
+.husky/
+.github/
+.gitignore
+.editorconfig
+.prettierrc*
+.eslintrc*
+bun.lock.bak
