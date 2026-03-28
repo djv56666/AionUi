@@ -41,9 +41,6 @@ RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debia
     xvfb \
     && rm -rf /var/lib/apt/lists/*
 
-RUN npm config set registry https://registry.npmmirror.com && \
-    npm install -g opencode-ai@latest
-
 WORKDIR /app
 
 # 从 native-builder 拷贝已编译好的 node_modules（含 Electron ABI 的 .node）
@@ -51,7 +48,8 @@ COPY --from=native-builder /app/node_modules ./node_modules
 
 # 安装 electron（全局，利用缓存层）
 COPY package.json ./
-RUN npm install -g electron@$(node -e "console.log(require('./package.json').devDependencies.electron.replace('^',''))")
+RUN npm config set registry https://registry.npmmirror.com && \
+    npm install -g electron@$(node -e "console.log(require('./package.json').devDependencies.electron.replace('^',''))")
 
 # 拷贝构建产物（变动最频繁的层放最后）
 COPY out ./out
