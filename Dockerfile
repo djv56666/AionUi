@@ -1,5 +1,5 @@
 # ============================================================
-# Stage 1: 编译 better-sqlite3 原生模块（针对 Electron ABI）
+# Stage 1: 安装生产依赖（native 模块针对 Node.js ABI 编译）
 # ============================================================
 FROM node:22-slim AS native-builder
 
@@ -18,38 +18,34 @@ COPY package.json bun.lock ./
 COPY patches ./patches/
 COPY scripts ./scripts/
 
-# 1. 安装生产依赖（跳过所有脚本）
-# 2. 用 electron-rebuild 针对 Electron 的 Node ABI 重编译 better-sqlite3
-RUN CI=1 ELECTRON_SKIP_BINARY_DOWNLOAD=1 \
-    bun install --production --omit=optional --no-save --ignore-scripts && \
-    ELECTRON_VER=$(node -e "console.log(require('./package.json').devDependencies.electron.replace('^',''))") && \
-    npx --yes @electron/rebuild -v "$ELECTRON_VER" -m . -o better-sqlite3
+# 安装生产依赖（native 模块自动针对 Node.js ABI 编译）
+RUN CI=1 bun install --production --omit=optional --no-save --ignore-scripts && \
+    npm rebuild better-sqlite3
+
+# 清理非运行时文件，减小镜像体积
+RUN cd node_modules && \
+    rm -rf \
+      electron-log electron-updater electron-squirrel-startup \
+      @sentry @sentry-internal && \
+    find . -type f \( -name '*.map' -o -name '*.d.ts' -o -name '*.md' \) -delete && \
+    find . -type d \( -name 'test' -o -name 'tests' -o -name '__tests__' \
+      -o -name 'docs' -o -name 'doc' -o -name 'example' -o -name 'examples' \
+      -o -name 'benchmark' -o -name '.github' -o -name 'spec' -o -name 'specs' \) \
+      -exec rm -rf {} + 2>/dev/null; true
 
 # ============================================================
-# Stage 2: 运行时镜像（不含编译工具链）
+# Stage 2: 精简运行时镜像（无 Electron、无 Xvfb、无 GTK）
 # ============================================================
 FROM node:22-slim AS runtime
 
-RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources && \
-    apt-get update && apt-get install -y --no-install-recommends \
-    # Electron 运行依赖
-    libgtk-3-0 libgbm1 libnss3 libnspr4 \
-    libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
-    libxkbcommon0 libxcomposite1 libxdamage1 libxrandr2 \
-    libpango-1.0-0 libcairo2 libasound2 libxss1 libxtst6 \
-    # 虚拟显示
-    xvfb \
-    && rm -rf /var/lib/apt/lists/*
-
 WORKDIR /app
 
-# 从 native-builder 拷贝已编译好的 node_modules（含 Electron ABI 的 .node）
+# 从 native-builder 拷贝已编译好的 node_modules（Node.js ABI）
 COPY --from=native-builder /app/node_modules ./node_modules
 
-# 安装 electron（全局，利用缓存层）
-COPY package.json ./
+# 安装 opencode-ai 作为执行层
 RUN npm config set registry https://registry.npmmirror.com && \
-    npm install -g electron@$(node -e "console.log(require('./package.json').devDependencies.electron.replace('^',''))")
+    npm install -g opencode-ai@latest
 
 # 拷贝构建产物（变动最频繁的层放最后）
 COPY out ./out
@@ -59,11 +55,11 @@ COPY docker-entry.sh /docker-entry.sh
 RUN chmod +x /docker-entry.sh
 
 ENV NODE_ENV=production
-ENV DISPLAY=:99
 ENV DATA_DIR=/data
-ENV AIONUI_ALLOW_REMOTE=true
+ENV PORT=3000
+ENV ALLOW_REMOTE=true
 
 VOLUME ["/data"]
-EXPOSE 25808
+EXPOSE 3000
 
 CMD ["/docker-entry.sh"]

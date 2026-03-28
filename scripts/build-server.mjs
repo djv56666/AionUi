@@ -54,6 +54,24 @@ const wasmStubPlugin = {
   },
 };
 
+// Stub out Bun-only modules for the main server entry — in standalone Node.js mode,
+// these are never loaded (createDriver.ts uses dynamic imports guarded by
+// process.versions.bun), but esbuild with `external` would leave the raw import
+// statement in the bundle, causing ERR_UNSUPPORTED_ESM_URL_SCHEME at load time.
+const bunStubPlugin = {
+  name: 'bun-stub',
+  setup(build) {
+    build.onResolve({ filter: /^bun:/ }, (args) => ({
+      path: args.path,
+      namespace: 'bun-stub',
+    }));
+    build.onLoad({ filter: /.*/, namespace: 'bun-stub' }, () => ({
+      contents: 'export default {}; export function Database() {}',
+      loader: 'js',
+    }));
+  },
+};
+
 // For worker processes, replace .wasm?binary imports with runtime fs.readFileSync
 // calls pointing to dist-server/wasm/. The __dirname banner shim makes this work
 // in ESM output without needing import.meta.url resolution.
@@ -94,8 +112,18 @@ const sharedConfig = {
   bundle: true,
   format: 'esm',
   tsconfig: 'tsconfig.json',
-  external: ['bun:sqlite', 'keytar', 'node-pty', 'ws'],
+  external: ['better-sqlite3', 'keytar', 'node-pty', 'ws'],
   logLevel: 'info',
+};
+
+// bun:sqlite is only available under the Bun runtime. For the main server
+// entry (run by Node.js in Docker), stub it out. For worker entries, keep it
+// external — they are only forked when running under Bun.
+const bunExternalPlugin = {
+  name: 'bun-external',
+  setup(build) {
+    build.onResolve({ filter: /^bun:/ }, (args) => ({ path: args.path, external: true }));
+  },
 };
 
 // Build the main server entry as .mjs (requires import.meta.url for open@10 etc.)
@@ -105,7 +133,7 @@ await build({
   outdir: 'dist-server',
   // Output as .mjs so Node.js treats it as ESM unconditionally
   outExtension: { '.js': '.mjs' },
-  plugins: [wasmStubPlugin],
+  plugins: [wasmStubPlugin, bunStubPlugin],
   // Inject CJS compatibility shims so bundled code that uses __dirname,
   // __filename, or eval('require') continues to work in the ESM output.
   // Use aliased imports to avoid collisions with names used inside the bundle.
@@ -125,6 +153,6 @@ await build({
     'src/process/worker/nanobot.ts',
   ],
   outdir: 'dist-server',
-  plugins: [wasmRuntimePlugin],
+  plugins: [wasmRuntimePlugin, bunExternalPlugin],
   banner: { js: cjsBanner },
 });
